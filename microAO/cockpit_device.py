@@ -31,11 +31,8 @@ mirror as currently mounted on DeepSIM in Oxford.
 import os
 import time
 import queue
-
 import json
 import decimal
-import dataclasses
-
 import cockpit.depot
 import cockpit.devices
 import cockpit.devices.device
@@ -54,18 +51,9 @@ import h5py
 import tifffile
 import microscope.devices
 import microAO.dm_layouts
-
 from microAO.events import *
 from microAO.gui.main import MicroscopeAOCompositeDevicePanel
-from microAO.gui.sensorlessViewer import MetricPlotData
-import microAO.aoAlg
-
-@dataclasses.dataclass(frozen=True)
-class SensorlessParamsMode:
-    # Noll index
-    index_noll: int
-    # The amplitude offsets used for scanning the mode
-    offsets: np.ndarray
+import microAO.aoRoutines
 
 
 class AOHandler(cockpit.handlers.deviceHandler.DeviceHandler):
@@ -140,23 +128,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             "gain": 0.7
         }
 
-        # Need intial values for sensorless AO
-        self.sensorless_params = {
-            "num_reps": 1,
-            "modes": (
-                SensorlessParamsMode(11, np.linspace(-1.5, 1.5, 7)),
-                SensorlessParamsMode(22, np.linspace(-1.5, 1.5, 7)),
-                SensorlessParamsMode(5, np.linspace(-1.5, 1.5, 7)),
-                SensorlessParamsMode(6, np.linspace(-1.5, 1.5, 7)),
-                SensorlessParamsMode(7, np.linspace(-1.5, 1.5, 7)),
-                SensorlessParamsMode(8, np.linspace(-1.5, 1.5, 7)),
-                SensorlessParamsMode(9, np.linspace(-1.5, 1.5, 7)),
-                SensorlessParamsMode(10, np.linspace(-1.5, 1.5, 7)),
-            ),
-            "NA": 1.1,
-            "wavelength": 560,
-            "save_as_datapoint": False,
-        }
+        self.sensorless_routine = next(iter(microAO.aoRoutines.routines))
 
         # Shared state for the new image callbacks during sensorless
         self.sensorless_data = {}
@@ -656,7 +628,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         self.toggle_correction("system_flat", True)
         self.refresh_corrections()
 
-    def correctSensorlessSetup(self, camera, datapoint_z=None):
+    def correctSensorlessSetup(self, camera, datapoint_z):
         logger.log.info("Performing sensorless AO setup")
 
         # Check for calibration
@@ -679,47 +651,14 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         self.sensorless_data = {
             "camera_name": camera.name,
             "image_stack": [],
-            "corrections": init_sensorless,
-            "total_measurements": sum(
-                [len(mode.offsets) for mode in self.sensorless_params["modes"]]
-            ) * self.sensorless_params["num_reps"],
-            "metric_params": {
-                "wavelength": self.sensorless_params["wavelength"] * 10 ** -9,
-                "NA": self.sensorless_params["NA"],
-                "pixel_size": wx.GetApp().Objectives.GetPixelSize() * 10 ** -6,
-            },
-            "mode_index": 0,
-            "offset_index": 0,
             "datapoint_z": datapoint_z
         }
 
-        # Signal start of sensorless AO routine
-        max_scan_range = max(
-            [
-                mode.offsets.max() - mode.offsets.min()
-                for mode in self.sensorless_params["modes"]
-            ]
-        )
-        events.publish(
-            PUBSUB_SENSORLESS_START,
-            max_scan_range,
-            self.aoAlg.get_metric(),
-            self.sensorless_data["metric_params"]
-        )
+        # Perform sensorless setup
+        initial_modes = self.sensorless_routine.setup(init_sensorless.copy())
 
-        # Apply the first set of modes
-        new_modes = self.sensorless_data["corrections"].copy()
-        new_modes[
-            self.sensorless_params["modes"][
-                self.sensorless_data["mode_index"]
-            ].index_noll
-            - 1
-        ] += self.sensorless_params["modes"][
-            self.sensorless_data["mode_index"]
-        ].offsets[
-            self.sensorless_data["offset_index"]
-        ]
-        self.set_correction("sensorless", new_modes)
+        # Set the first correction
+        self.set_correction("sensorless", initial_modes)
         self.toggle_correction("sensorless", True)
         self.refresh_corrections()
 
@@ -729,108 +668,29 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             self.correctSensorlessImage,
         )
 
+        # Signal start of sensorless AO routine
+        events.publish(PUBSUB_SENSORLESS_START, self.sensorless_routine)
+
         # Take image. This will trigger the iterative sensorless AO correction
         wx.CallAfter(wx.GetApp().Imager.takeImage)
 
     def correctSensorlessImage(self, image, _):
-        # Log the progress
-        logger.log.info(
-            "Correction image %i/%i"
-            % (
-                len(self.sensorless_data["image_stack"]) + 1,
-                self.sensorless_data["total_measurements"],
-            )
-        )
-        # Update status light
-        events.publish(
-            events.UPDATE_STATUS_LIGHT,
-            "image count",
-            "Sensorless AO: image %s/%s, mode %s, meas. %s"
-            % (
-                len(self.sensorless_data["image_stack"]) + 1,
-                self.sensorless_data["total_measurements"],
-                self.sensorless_params["modes"][
-                    self.sensorless_data["mode_index"]
-                ].index_noll,
-                self.sensorless_data["offset_index"] + 1,
-            ),
-        )
         # Add the image to the stack and request its eventual processing
         self.sensorless_data["image_stack"].append(image)
         wx.CallAfter(self.correctSensorlessProcessing)
 
-    def correctSensorlessAberation(self):
-        # Calculate required parameters
-        mode_index_noll_0 = (
-            self.sensorless_params["modes"][
-                self.sensorless_data["mode_index"]
-            ].index_noll
-            - 1
-        )
-        modes = (
-            self.sensorless_data["corrections"][mode_index_noll_0]
-            + self.sensorless_params["modes"][
-                self.sensorless_data["mode_index"]
-            ].offsets
-        )
-        image_stack = self.sensorless_data["image_stack"][-modes.shape[0] :]
-        # Find aberration amplitudes and correct
-        peak, metrics, metric_diagnostics = self.aoAlg.find_zernike_amp_sensorless(
-            image_stack=image_stack,
-            modes=modes,
-            **self.sensorless_data["metric_params"]
-        )
-        self.sensorless_data["corrections"][mode_index_noll_0] = peak[0]
-        # Signal sensorless results
-        events.publish(
-            PUBSUB_SENSORLESS_RESULTS,
-            image_stack,
-            MetricPlotData(
-                peak=peak,
-                metrics=metrics,
-                modes=modes,
-                mode_label=f"Z{mode_index_noll_0 + 1}"
-            ),
-            metric_diagnostics
-        )
-        # Update indices
-        self.sensorless_data["offset_index"] = 0
-        self.sensorless_data["mode_index"] += 1
-        if self.sensorless_data["mode_index"] == len(
-            self.sensorless_params["modes"]
-        ):
-            self.sensorless_data["mode_index"] = 0
-
     def correctSensorlessProcessing(self):
-        if (
-            len(self.sensorless_data["image_stack"])
-            < self.sensorless_data["total_measurements"]
-        ):
-            # Increment offset index
-            self.sensorless_data["offset_index"] += 1
-            # Correct mode if enough measurements have been taken
-            if (
-                self.sensorless_data["offset_index"]
-                == self.sensorless_params["modes"][
-                    self.sensorless_data["mode_index"]
-                ].offsets.shape[0]
-            ):
-                self.correctSensorlessAberation()
-            # Apply next set of modes
-            new_modes = self.sensorless_data["corrections"].copy()
-            new_modes[
-                self.sensorless_params["modes"][
-                    self.sensorless_data["mode_index"]
-                ].index_noll
-                - 1
-            ] += self.sensorless_params["modes"][
-                self.sensorless_data["mode_index"]
-            ].offsets[
-                self.sensorless_data["offset_index"]
-            ]
-            self.set_correction("sensorless", new_modes)
-            self.refresh_corrections()
-        else:
+        # Perform processing of image through AO routine
+        done, modes = self.sensorless_routine.process(
+            self.sensorless_data["image_stack"]
+        )
+
+        # Update with latest corrections
+        self.set_correction("sensorless", modes)
+        self.refresh_corrections()
+
+        # Check for process completion
+        if done:
             # Once all images have been obtained, unsubscribe
             logger.log.debug(
                 "Unsubscribing to camera %s events"
@@ -842,21 +702,20 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             )
             events.publish(events.UPDATE_STATUS_LIGHT, "image count", "")
 
-            self.correctSensorlessAberation()
+            # Log data if filepath provided
+            if self.sensorless_routine.params.get("log_path", ""):
+                self._log_sensorless(
+                    self.sensorless_data,
+                    self.sensorless_routine
+                )
 
-            if self.sensorless_params["save_as_datapoint"]:
-                # Save the result as a datapoint
+            if self.sensorless_routine.params.get("save_as_datapoint", False):
+                # Update sensorless modes to fitted values
                 self.corrfit_dp_add(
                     "sensorless",
                     self.sensorless_data["datapoint_z"],
-                    self.sensorless_data["corrections"]
+                    modes
                 )
-            else:
-                # Update the correction's values directly
-                self.set_correction(
-                    "sensorless", self.sensorless_data["corrections"]
-                )
-                self.refresh_corrections()
 
             # Signal end of sensorless AO routine
             events.publish(PUBSUB_SENSORLESS_FINISH)
@@ -865,38 +724,34 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         time.sleep(0.1)
         wx.CallAfter(wx.GetApp().Imager.takeImage)
 
-    def _log_correction_applied(
+    def _log_sensorless(
         self,
-        image_stack,
-        corrections,
-        modes,
-        NA,
-        wavelength,
+        data,
+        routine
     ):
+        # Create timestamp
+        ts = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
+
         # Derive file path
-        ao_log_filepath = os.path.join(
-            wx.GetApp().Config["log"].getpath("dir"),
-            "sensorless_AO_" + time.strftime("%Y%m%d_%H%M", time.gmtime()) + ".h5",
+        filepath = os.path.join(
+            routine.params["log_path"],
+            "sensorless_AO_" + ts + ".h5",
         )
 
         # Write data to file
-        with h5py.File(ao_log_filepath, "w") as f:
-            # Assemble data to write
-            data = [
-                ("timestamp", time.strftime("%Y%m%d_%H%M", time.gmtime())),
-                ("image_stack", image_stack),
-                ("corrections", corrections),
-                ("modes", modes),
-                ("NA", NA),
-                ("wavelength", wavelength),
-            ]
-
-            # Write assembled data
-            for datum in data:
-                try:
-                    f.create_dataset(datum[0], data=datum[1])
-                except Exception as e:
-                    print("Failed to write: {}".format(datum[0]), e)
+        with h5py.File(filepath, "w") as f:
+            # Write params and data
+            data = [("params", routine.params), ("data", data)]
+            for group_name, group_data in data:
+                group = f.create_group(group_name)
+                for key, val in group_data.items():
+                    try:
+                        group.create_dataset(key, data=val)
+                    except Exception as e:
+                        logger.log.error(
+                            "Failed to write sensorless data: {}".format(key),
+                            e
+                        )
 
     def captureImage(self, camera, imager, timeout=5.0):
         # Set capture method
@@ -1199,3 +1054,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         return np.array(
             [poly(z) for poly in self._corrfit_polys[cname]]
         ) * self._corrfit_coeffs[cname]
+
+    def set_sensorless_routine(self, routine):
+        # Set up sensorless parameters dict
+        self.sensorless_routine = routine

@@ -18,9 +18,12 @@
 
 #Import required packs
 import dataclasses
+import collections.abc
 import numpy as np
 from scipy.signal import tukey
 from skimage.filters import threshold_otsu
+
+import microAO.gui.metricDiagnostics
 
 
 @dataclasses.dataclass(frozen=True)
@@ -207,3 +210,31 @@ def measure_second_moment_metric(image, wavelength, NA, pixel_size, **kwargs):
     fftarray_sq_log_masked = ring_mask * fftarray_sq_log * ramp_mask * omega
     metric = np.sum(fftarray_sq_log_masked)/np.sum(fftarray_sq_log)
     return metric, DiagnosticsSecondMoment(fftarray_sq_log, fftarray_sq_log_masked)
+
+@dataclasses.dataclass(frozen=True)
+class _MetricObjects:
+    function: collections.abc.Callable
+    diagnostic_panel: microAO.gui.metricDiagnostics.DiagnosticsPanelBase
+
+metrics = {
+    "Fourier": _MetricObjects(
+        measure_fourier_metric,
+        microAO.gui.metricDiagnostics.DiagnosticsPanelFourier
+    ),
+    "Contrast": _MetricObjects(
+        measure_contrast_metric,
+        microAO.gui.metricDiagnostics.DiagnosticsPanelContrast
+    ),
+    "Fourier power": _MetricObjects(
+        measure_fourier_power_metric,
+        microAO.gui.metricDiagnostics.DiagnosticsPanelFourierPower
+    ),
+    "Gradient": _MetricObjects(
+        measure_gradient_metric,
+        microAO.gui.metricDiagnostics.DiagnosticsPanelGradient
+    ),
+    "Second moment": _MetricObjects(
+        measure_second_moment_metric,
+        microAO.gui.metricDiagnostics.DiagnosticsPanelSecondMoment
+    ),
+}

@@ -27,15 +27,8 @@ import aotools
 import scipy.stats as stats
 from skimage.restoration import unwrap_phase
 from scipy.integrate import trapz
-import microAO.aoMetrics as metrics
-
-metric_function = {
-    'fourier': metrics.measure_fourier_metric,
-    'contrast': metrics.measure_contrast_metric,
-    'fourier_power': metrics.measure_fourier_power_metric,
-    'gradient': metrics.measure_gradient_metric,
-    'second_moment': metrics.measure_second_moment_metric,
-}
+import microAO.aoMetrics
+from microAO.events import *
 
 class AdaptiveOpticsFunctions():
 
@@ -56,16 +49,6 @@ class AdaptiveOpticsFunctions():
     def set_controlMatrix(self, controlMatrix):
         self.controlMatrix = controlMatrix
         return
-
-    def set_metric(self, metric):
-        if metric in metric_function.keys():
-            self.metric = metric
-        else:
-            raise Exception("Error: %s is not a supported image quality metric" %metric)
-        return
-
-    def get_metric(self):
-        return self.metric
 
     def make_mask(self, radius):
         diameter = radius * 2
@@ -325,39 +308,36 @@ class AdaptiveOpticsFunctions():
 
         return actuator_pos
 
-    def find_zernike_amp_sensorless(self, image_stack, modes, **kwargs):
+    @staticmethod
+    def find_zernike_amp_sensorless(image_stack, modes, metric_name, **kwargs):
         # Calculate metrics
         metrics = []
         metric_diagnostics = []
         for image in image_stack:
-            metric, metric_diagnostic = metric_function[self.metric](image, **kwargs)
+            metric, metric_diagnostic = microAO.aoMetrics.metrics[metric_name].function(image, **kwargs)
             metrics.append(metric)
             metric_diagnostics.append(metric_diagnostic)
         metrics = np.array(metrics)
         # Trivial case
         if metrics.shape[0] == 1:
-            return np.array((modes[0], metrics[0])), metrics
+            return np.array((modes[0], metrics[0])), metrics, metric_diagnostics
         # Fit a parabola to the highest metric point and its neighbours
         if metrics.shape[0] == 2:
             indices_to_fit = [0, 1]
         else:
             max_metric_index = np.argmax(metrics)
-            indices_to_fit = np.array([
-                max_metric_index - 1,
-                max_metric_index,
-                max_metric_index + 1
-            ])
+            indices_to_fit = np.array(
+                [max_metric_index - 1, max_metric_index, max_metric_index + 1]
+            )
             # Handle edge cases
             if max_metric_index == 0:
-                 # Peak is at the left boundary => select two neighbours to the right
+                # Peak is at the left boundary => select two neighbours to the right
                 indices_to_fit += 1
             elif max_metric_index == metrics.shape[0] - 1:
                 # Peak is at the right boundary => select two neighbours to the left
-             indices_to_fit -= 1
+                indices_to_fit -= 1
         parabola = np.polynomial.Polynomial.fit(
-            modes[indices_to_fit],
-            metrics[indices_to_fit],
-            2
+            modes[indices_to_fit], metrics[indices_to_fit], 2
         )
         # Find the maxima of the parabola
         parabola_maxima = parabola.deriv().roots()[0]
