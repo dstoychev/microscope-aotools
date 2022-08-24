@@ -183,6 +183,35 @@ class _ConventionalRoutine(_Routine):
         return (done, new_modes)
 
 
+class _MLRoutine(_Routine):
+    def __init__(self) -> None:
+        super().__init__("ML")
+
+    def setup(self, initial_corrections) -> np.ndarray:
+        # Define additional data required for routine
+        self._index_image = 0
+
+        # Define the first correction to apply
+        new_modes = initial_corrections.copy()
+
+        return new_modes
+
+    def process(self, images_all) -> tuple[bool, np.ndarray]:
+        # Determine the new modes
+        # new_modes = model.predict()
+        new_modes = self._corrections.copy()
+
+        # Update the image index
+        self._index_image += 1
+
+        # Determine completion state
+        done = False
+        if self._index_image >= 5:
+            done = True
+
+        return (done, new_modes)
+
+
 @dataclass(frozen=True)
 class _RoutineObjects:
     parameter_dialog: wx.Dialog
@@ -193,5 +222,8 @@ routines = {
     _ConventionalRoutine(): _RoutineObjects(
         microAO.gui.sensorlessParameters.ConventionalParametersDialog,
         microAO.gui.sensorlessViewer.ConventionalResultsViewer,
-    )
+    ),
+    _MLRoutine(): _RoutineObjects(
+        microAO.gui.sensorlessParameters.MLParametersDialog, None
+    ),
 }

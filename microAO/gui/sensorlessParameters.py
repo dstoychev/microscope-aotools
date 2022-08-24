@@ -430,3 +430,45 @@ class ConventionalParametersDialog(wx.Dialog):
         ] = self._checkbox_dp_save.GetValue()
         # Propagate event
         event.Skip()
+
+
+class MLParametersDialog(wx.Dialog):
+    def __init__(self, parent):
+        super().__init__(
+            parent,
+            title="Sensorless parameters selection",
+            style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
+        )
+
+        panel = wx.Panel(self)
+
+        panel_sizer = wx.BoxSizer(wx.VERTICAL)
+        panel_sizer.Add(
+            wx.StaticText(
+                panel,
+                label="This routine has no parameters to set.",
+            ),
+            1,
+            wx.EXPAND | wx.ALL,
+            20,
+        )
+        panel.SetSizerAndFit(panel_sizer)
+
+        # Create the standard buttons
+        sizer_stdbuttons = wx.StdDialogButtonSizer()
+        button_ok = wx.Button(self, wx.ID_OK)
+        button_ok.Bind(wx.EVT_BUTTON, self._on_ok)
+        sizer_stdbuttons.Add(button_ok)
+        button_cancel = wx.Button(self, wx.ID_CANCEL)
+        sizer_stdbuttons.Add(button_cancel)
+        sizer_stdbuttons.Realize()
+
+        # Finalise layout
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.Add(panel, 1, wx.EXPAND)
+        sizer.Add(sizer_stdbuttons, 0, wx.ALL, 5)
+        self.SetSizerAndFit(sizer)
+
+    def _on_ok(self, event: wx.CommandEvent):
+        # Propagate event
+        event.Skip()
