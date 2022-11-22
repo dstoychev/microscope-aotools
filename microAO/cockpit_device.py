@@ -150,7 +150,8 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         # Handle abort events
         self._abort = {
             "calib_data": False,
-            "calib_calc": False
+            "calib_calc": False,
+            "sensorless": False,
         }
         events.subscribe(events.USER_ABORT, self._on_abort)
 
@@ -698,6 +699,11 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         # Update with latest corrections
         self.set_correction("sensorless", modes)
         self.refresh_corrections()
+
+        # Check for abortion requests
+        if self._abort["sensorless"]:
+            done = True
+            self._abort["sensorless"] = False
 
         # Check for process completion
         if done:
