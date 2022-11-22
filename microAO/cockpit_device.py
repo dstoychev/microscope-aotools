@@ -733,9 +733,6 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                     modes
                 )
 
-            # Signal end of sensorless AO routine
-            events.publish(PUBSUB_SENSORLESS_FINISH)
-
         # Take image, but ensure it's called after the phase is applied
         time.sleep(0.1)
         wx.CallAfter(wx.GetApp().Imager.takeImage)
