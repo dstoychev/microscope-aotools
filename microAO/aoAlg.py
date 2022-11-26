@@ -29,6 +29,124 @@ from skimage.restoration import unwrap_phase
 from scipy.integrate import trapz
 import microAO.aoMetrics
 from microAO.events import *
+import scipy.optimize
+import dataclasses
+import collections.abc
+
+
+@dataclasses.dataclass(frozen=True)
+class MetricFittingData:
+    curve: collections.abc.Callable
+    curve_params: list[float]
+    range_x: tuple[float, float]
+
+def _metric_fitting_gaussian(xs: np.ndarray, ys: np.ndarray):
+    def gaussian_function(x, offset=0, amplitude=0, centre=0, width=1):
+        return (offset - amplitude) + (amplitude * np.exp((-(x - centre) ** 2) / (2 * width ** 2)))
+    try:
+        popt, _ = scipy.optimize.curve_fit(
+            gaussian_function,
+            xs,
+            ys,
+            # offset, amplitude, centre, width
+            p0=(ys.min(), ys.max(), xs[ys.argmax()], xs.ptp() / 2),
+        )
+        mean = popt[2]
+        return (
+            np.array((mean, gaussian_function(mean, *popt))),
+            MetricFittingData(
+                gaussian_function,
+                popt,
+                (xs[0], xs[-1])
+            )
+        )
+    except RuntimeError:
+        if ys.max() - ys.mean() >= 2 * ys.std():
+            # There is a sharp peak in the metric values => use it as the mean
+            mean_x = xs[ys.argmax()]
+            mean_y = ys.max()
+        else:
+            # Defaulting to the middle of the range
+            mean_x = xs.mean()
+            mean_y = ys.mean()
+        return np.array((mean_x, mean_y)), None
+
+def _metric_fitting_quadratic(xs: np.ndarray, ys: np.ndarray):
+    # Trivial case
+    if xs.shape[0] == 1:
+        return np.array((xs[0], ys[0])), None
+    # Fit parabola to metric values
+    poly = np.polynomial.Polynomial.fit(
+        xs, ys, 2
+    )
+    # Consider both the root and the boundaries as potential local maxima
+    maxima_candidates = np.array(
+        [
+            [x, poly(x)]
+            for x in [poly.deriv().roots()[0], xs[0], xs[-1]]
+        ]
+    )
+    maxima_index = maxima_candidates[:, 1].argmax()
+    return (
+        maxima_candidates[maxima_index],
+        MetricFittingData(
+            poly,
+            [],
+            (xs[0], xs[-1])
+        )
+    )
+
+def _metric_fitting_quadratic_local(xs: np.ndarray, ys: np.ndarray):
+    # Trivial case
+    if xs.shape[0] == 1:
+        return np.array((xs[0], ys[0])), None
+    # Fit a parabola to the highest metric point and its two neighbours
+    if ys.shape[0] == 2:
+        indices_to_fit = [0, 1]
+    else:
+        indices_to_fit = ys.argmax() + np.array((-1, 0, 1))
+        # Handle edge cases
+        if indices_to_fit[0] == -1:
+            # Peak is at the left boundary => shift to the right
+            indices_to_fit += 1
+        elif indices_to_fit[-1] == ys.shape[0]:
+            # Peak is at the right boundary => shift to the left
+            indices_to_fit -= 1
+    poly = np.polynomial.Polynomial.fit(
+        xs[indices_to_fit], ys[indices_to_fit], 2
+    )
+    # Find the maxima of the parabola
+    parabola_maxima = poly.deriv().roots()[0]
+    # Consider the boundary points and the maxima, but only if it is within
+    # the boundaries
+    maxima_candidates = [
+        (xs[indices_to_fit[0]], ys[indices_to_fit[0]]),
+        (xs[indices_to_fit[-1]], ys[indices_to_fit[-1]])
+    ]
+    if (
+        parabola_maxima > maxima_candidates[0][0]
+        and parabola_maxima < maxima_candidates[1][0]
+    ):
+        maxima_candidates.append(
+            (parabola_maxima, poly(parabola_maxima)),
+        )
+    maxima_candidates = np.array(maxima_candidates)
+    # Find the peak and return it, together with the metrics
+    maxima_index = maxima_candidates[:, 1].argmax()
+    return (
+        maxima_candidates[maxima_index],
+        MetricFittingData(
+            poly,
+            [],
+            (xs[indices_to_fit[0]], xs[indices_to_fit[-1]])
+        )
+    )
+
+metric_fittings = {
+    "Gaussian": _metric_fitting_gaussian,
+    "Quadratic": _metric_fitting_quadratic,
+    "Local quadratic": _metric_fitting_quadratic_local,
+}
 
 class AdaptiveOpticsFunctions():
 
@@ -309,7 +427,7 @@ class AdaptiveOpticsFunctions():
         return actuator_pos
 
     @staticmethod
-    def find_zernike_amp_sensorless(image_stack, modes, metric_name, **kwargs):
+    def find_zernike_amp_sensorless(image_stack, modes, metric_name, metric_fitting_name, **kwargs):
         # Calculate metrics
         metrics = []
         metric_diagnostics = []
@@ -318,46 +436,9 @@ class AdaptiveOpticsFunctions():
             metrics.append(metric)
             metric_diagnostics.append(metric_diagnostic)
         metrics = np.array(metrics)
-        # Trivial case
-        if metrics.shape[0] == 1:
-            return np.array((modes[0], metrics[0])), metrics, metric_diagnostics
-        # Fit a parabola to the highest metric point and its neighbours
-        if metrics.shape[0] == 2:
-            indices_to_fit = [0, 1]
-        else:
-            max_metric_index = np.argmax(metrics)
-            indices_to_fit = np.array(
-                [max_metric_index - 1, max_metric_index, max_metric_index + 1]
-            )
-            # Handle edge cases
-            if max_metric_index == 0:
-                # Peak is at the left boundary => select two neighbours to the right
-                indices_to_fit += 1
-            elif max_metric_index == metrics.shape[0] - 1:
-                # Peak is at the right boundary => select two neighbours to the left
-                indices_to_fit -= 1
-        parabola = np.polynomial.Polynomial.fit(
-            modes[indices_to_fit], metrics[indices_to_fit], 2
-        )
-        # Find the maxima of the parabola
-        parabola_maxima = parabola.deriv().roots()[0]
-        # Consider the boundary points and the maxima, but only if it is within
-        # the boundaries
-        peak_candidates = [
-            (modes[indices_to_fit[0]], metrics[indices_to_fit[0]]),
-            (modes[indices_to_fit[-1]], metrics[indices_to_fit[-1]])
-        ]
-        if (
-            parabola_maxima > peak_candidates[0][0]
-            and parabola_maxima < peak_candidates[1][0]
-        ):
-            peak_candidates.append(
-                (parabola_maxima, parabola(parabola_maxima)),
-            )
-        peak_candidates = np.array(peak_candidates)
-        # Find the peak and return it, together with the metrics
-        peak_index = np.argmax(peak_candidates[:, 1])
-        return peak_candidates[peak_index], metrics, metric_diagnostics
+        # Fit curve to the metrics
+        peak, fitting_data = metric_fittings[metric_fitting_name](modes, metrics)
+        return peak, metrics, fitting_data, metric_diagnostics
 
     def calc_phase_error_RMS(self, phase, modes_to_subtract=(0, 1, 2)):
         # NOTE: only works if modes_to_subtract is a contiguous subset of modes

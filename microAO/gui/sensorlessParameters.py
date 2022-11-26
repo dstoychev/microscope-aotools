@@ -1,7 +1,8 @@
 import wx
 import numpy as np
 import dataclasses
-from microAO.aoMetrics import metrics
+import microAO.aoMetrics
+import microAO.aoAlg
 from wx.lib.filebrowsebutton import DirBrowseButton
 
 
@@ -35,7 +36,13 @@ class ConventionalParametersDialog(wx.Dialog):
         self._cbox_metric = wx.ComboBox(
             panel,
             value=params["metric"],
-            choices=list(metrics.keys()),
+            choices=list(microAO.aoMetrics.metrics.keys()),
+            style=wx.CB_READONLY,
+        )
+        self._cbox_metric_fitting = wx.ComboBox(
+            panel,
+            value=params["metric_fitting"],
+            choices=list(microAO.aoAlg.metric_fittings.keys()),
             style=wx.CB_READONLY,
         )
         self._textctrl_ranges = wx.TextCtrl(
@@ -117,15 +124,29 @@ class ConventionalParametersDialog(wx.Dialog):
                 5,
             ),
             (
-                wx.StaticText(panel, label="Save results as datapoint?"),
+                wx.StaticText(panel, label="Metric fitting:"),
                 wx.GBPosition(4, 0),
                 wx.GBSpan(1, 1),
                 wx.ALL,
                 5,
             ),
             (
-                self._checkbox_dp_save,
+                self._cbox_metric_fitting,
                 wx.GBPosition(4, 1),
+                wx.GBSpan(1, 1),
+                wx.ALL,
+                5,
+            ),
+            (
+                wx.StaticText(panel, label="Save results as datapoint?"),
+                wx.GBPosition(5, 0),
+                wx.GBSpan(1, 1),
+                wx.ALL,
+                5,
+            ),
+            (
+                self._checkbox_dp_save,
+                wx.GBPosition(5, 1),
                 wx.GBSpan(1, 1),
                 wx.ALL,
                 5,
@@ -141,21 +162,21 @@ class ConventionalParametersDialog(wx.Dialog):
                         "amplitude\n\tScan range steps"
                     ),
                 ),
-                wx.GBPosition(5, 0),
+                wx.GBPosition(6, 0),
                 wx.GBSpan(1, 2),
                 wx.ALL,
                 5,
             ),
             (
                 self._textctrl_ranges,
-                wx.GBPosition(6, 0),
+                wx.GBPosition(7, 0),
                 wx.GBSpan(1, 2),
                 wx.ALL | wx.EXPAND,
                 5,
             ),
             (
                 self._textctrl_logpath,
-                wx.GBPosition(7, 0),
+                wx.GBPosition(8, 0),
                 wx.GBSpan(1, 2),
                 wx.ALL | wx.EXPAND,
                 5,
@@ -247,6 +268,7 @@ class ConventionalParametersDialog(wx.Dialog):
             [self._textctrl_na, "numerical aperture", 0, float],
             [self._textctrl_wavelength, "wavelength", 0, int],
             [self._cbox_metric, "metric", "", str],
+            [self._cbox_metric_fitting, "metric_fitting", "", str],
             [self._textctrl_logpath, "logpath", "", str],
         ]
         for widget_data in widgets_data:
@@ -424,7 +446,10 @@ class ConventionalParametersDialog(wx.Dialog):
             widgets_data[2][2] * 1e-9
         )
         self._device.sensorless_routine.params["metric"] = widgets_data[3][2]
-        self._device.sensorless_routine.params["log_path"] = widgets_data[4][2]
+        self._device.sensorless_routine.params[
+            "metric_fitting"
+        ] = widgets_data[4][2]
+        self._device.sensorless_routine.params["log_path"] = widgets_data[5][2]
         self._device.sensorless_routine.params[
             "save_as_datapoint"
         ] = self._checkbox_dp_save.GetValue()

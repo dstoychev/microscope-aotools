@@ -104,9 +104,9 @@ class DiagnosticsPanelBase(wx.Panel):
     def _on_slider_mode(self, event: wx.CommandEvent):
         mode_index = event.GetInt() - 1
         current_diagnostics = (
-            self.GetParent().GetParent()._metric_diagnostics[mode_index]
+            self.GetParent().GetParent().metric_diagnostics[mode_index]
         )
-        current_data = self.GetParent().GetParent()._metric_data[mode_index]
+        current_data = self.GetParent().GetParent().metric_data[mode_index]
         # Update the measurement slider if necessary
         new_meas_max = len(current_diagnostics)
         if new_meas_max < self._slider_meas.GetValue():
@@ -137,9 +137,9 @@ class DiagnosticsPanelBase(wx.Panel):
         self._slider_meas.SetMax(1)
 
     def update(self):
-        diagnostics = self.GetParent().GetParent()._metric_diagnostics
+        diagnostics = self.GetParent().GetParent().metric_diagnostics
         mode_index = self._slider_mode.GetValue() - 1
-        data = self.GetParent().GetParent()._metric_data[mode_index]
+        data = self.GetParent().GetParent().metric_data[mode_index]
         # Update the mode slider
         self._slider_mode.SetMax(len(diagnostics))
         # Update the measurement slider
@@ -157,7 +157,7 @@ class DiagnosticsPanelFourier(DiagnosticsPanelBase):
         diagnostics = (
             self.GetParent()
             .GetParent()
-            ._metric_diagnostics[index_mode][index_meas]
+            .metric_diagnostics[index_mode][index_meas]
         )
         # Clear axes
         self._figure.clear()
@@ -183,7 +183,7 @@ class DiagnosticsPanelContrast(DiagnosticsPanelBase):
         diagnostics = (
             self.GetParent()
             .GetParent()
-            ._metric_diagnostics[index_mode][index_meas]
+            .metric_diagnostics[index_mode][index_meas]
         )
         # Clear axes
         self._figure.clear()
@@ -219,7 +219,7 @@ class DiagnosticsPanelGradient(DiagnosticsPanelBase):
         diagnostics = (
             self.GetParent()
             .GetParent()
-            ._metric_diagnostics[index_mode][index_meas]
+            .metric_diagnostics[index_mode][index_meas]
         )
         # Clear axes
         self._figure.clear()
@@ -254,7 +254,7 @@ class DiagnosticsPanelFourierPower(DiagnosticsPanelBase):
         diagnostics = (
             self.GetParent()
             .GetParent()
-            ._metric_diagnostics[index_mode][index_meas]
+            .metric_diagnostics[index_mode][index_meas]
         )
         # Clear axes
         self._figure.clear()
@@ -281,7 +281,7 @@ class DiagnosticsPanelSecondMoment(DiagnosticsPanelBase):
         diagnostics = (
             self.GetParent()
             .GetParent()
-            ._metric_diagnostics[index_mode][index_meas]
+            .metric_diagnostics[index_mode][index_meas]
         )
         # Clear axes
         self._figure.clear()

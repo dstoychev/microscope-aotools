@@ -47,6 +47,7 @@ class _ConventionalRoutine(_Routine):
                 "wavelength": 560e-9,
                 "pixel_size": 0.0,
                 "metric": "Fourier",
+                "metric_fitting": "Gaussian",
                 "modes": (
                     microAO.gui.sensorlessParameters.ConventionalParamsMode(
                         11, np.linspace(-1.5, 1.5, 5)
@@ -119,11 +120,13 @@ class _ConventionalRoutine(_Routine):
             (
                 peak,
                 metrics,
+                fitting_data,
                 metric_diagnostics,
             ) = AdaptiveOpticsFunctions.find_zernike_amp_sensorless(
                 image_stack=images_mode,
                 modes=modes,
                 metric_name=self.params["metric"],
+                metric_fitting_name=self.params["metric_fitting"],
                 wavelength=self.params["wavelength"],
                 NA=self.params["NA"],
                 pixel_size=self.params["pixel_size"],
@@ -141,6 +144,8 @@ class _ConventionalRoutine(_Routine):
                     modes=modes,
                     mode_label=f"Z{mode_index_noll_0 + 1}",
                     peak=peak,
+                    fitting_name=self.params["metric_fitting"],
+                    fitting_data=fitting_data,
                 ),
             )
 

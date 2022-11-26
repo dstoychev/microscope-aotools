@@ -8,10 +8,12 @@ import matplotlib.figure
 import matplotlib.backends.backend_wxagg
 import matplotlib.backends.backend_wx
 import tifffile
+import typing
 
 import cockpit
 import microAO.aoMetrics
 import microAO.events
+import microAO.aoAlg
 
 
 @dataclasses.dataclass(frozen=True)
@@ -22,6 +24,8 @@ class ConventionalResults:
     modes: numpy.ndarray
     mode_label: str
     peak: numpy.ndarray
+    fitting_name: str
+    fitting_data: typing.Optional[microAO.aoAlg.MetricFittingData]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -30,6 +34,8 @@ class _ConventionalMetricPlotData:
     metrics: numpy.ndarray
     modes: numpy.ndarray
     mode_label: str
+    fitting_name: str
+    fitting_data: typing.Optional[microAO.aoAlg.MetricFittingData]
 
 
 class _ConventionalMetricPlotPanel(wx.Panel):
@@ -91,7 +97,7 @@ class _ConventionalMetricPlotPanel(wx.Panel):
         self._axes.set_ylabel("Metric")
 
     def update(self):
-        data = self.GetParent().GetParent()._metric_data[-1]
+        data = self.GetParent().GetParent().metric_data[-1]
         # Calculate parameters
         x_range = (self._x_position, self._x_position + self._max_scan_range)
 
@@ -106,7 +112,7 @@ class _ConventionalMetricPlotPanel(wx.Panel):
                 linewidth=spine.get_linewidth(),
             )
 
-        # Plot
+        # Plot measurement
         self._axes.plot(
             numpy.interp(
                 data.modes,
@@ -117,6 +123,23 @@ class _ConventionalMetricPlotPanel(wx.Panel):
             marker="o",
             color="skyblue",
         )
+
+        # Plot fit
+        if data.fitting_data:
+            xs = numpy.linspace(*data.fitting_data.range_x, 100)
+            ys = data.fitting_data.curve(xs, *data.fitting_data.curve_params)
+            self._axes.plot(
+                numpy.interp(
+                    xs,
+                    (min(data.modes), max(data.modes)),
+                    x_range,
+                ),
+                ys,
+                color="green",
+                alpha=0.5,
+            )
+
+        # Plot peak
         self._axes.plot(
             numpy.interp(
                 data.peak[0],
@@ -159,10 +182,11 @@ class ConventionalResultsViewer(wx.Frame):
 
         # Instance attributes
         self._metric_images = []
-        self._metric_data = []
-        self._metric_diagnostics = []
+        self.metric_data = []
+        self.metric_diagnostics = []
         self._metric_name = ""
         self._metric_params = {}
+        self._metric_fitting = ""
 
         self._notebook = wx.Notebook(self)
 
@@ -207,6 +231,20 @@ class ConventionalResultsViewer(wx.Frame):
         tifffile.imwrite(fpath, images)
 
     def save_data(self):
+        def recursive_string_conversion(d):
+            # Used to convert objects that are not JSON serialisable to objects
+            # that are, e.g. NumPy's ndarray to list
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    recursive_string_conversion(v)
+                else:
+                    if isinstance(v, numpy.ndarray):
+                        d[k] = v.tolist()
+                    elif isinstance(v, numpy.polynomial.Polynomial):
+                        d[k] = str(v)
+                    elif callable(v):
+                        d[k] = v.__name__
+
         # Ask the user to select file
         fpath = None
         with wx.FileDialog(
@@ -220,16 +258,15 @@ class ConventionalResultsViewer(wx.Frame):
             fpath = fileDialog.GetPath()
         # Convert data to dicts and save them as JSON
         data_dicts = []
-        for data in self._metric_data:
+        for data in self.metric_data:
             data_dict = dataclasses.asdict(data)
-            for key in data_dict:
-                if isinstance(data_dict[key], numpy.ndarray):
-                    data_dict[key] = data_dict[key].tolist()
+            recursive_string_conversion(data_dict)
             data_dicts.append(data_dict)
         json_dict = {
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "metric name": self._metric_name,
             "metric parameters": self._metric_params,
+            "metric fitting": self._metric_fitting,
             "correction results": data_dicts,
         }
         with open(fpath, "w", encoding="utf-8") as fo:
@@ -238,14 +275,15 @@ class ConventionalResultsViewer(wx.Frame):
     def _on_start(self, routine):
         # Initialise attributes
         self._metric_images = []
-        self._metric_data = []
-        self._metric_diagnostics = []
+        self.metric_data = []
+        self.metric_diagnostics = []
         self._metric_name = routine.params["metric"]
         self._metric_params = {
             "wavelength": routine.params["wavelength"],
             "NA": routine.params["NA"],
             "pixel_size": routine.params["pixel_size"],
         }
+        self._metric_fitting = routine.params["metric_fitting"]
 
         # Calculate required parameters
         max_scan_range = max(
@@ -286,9 +324,11 @@ class ConventionalResultsViewer(wx.Frame):
             metrics=results.metrics,
             modes=results.modes,
             mode_label=results.mode_label,
+            fitting_name=results.fitting_name,
+            fitting_data=results.fitting_data,
         )
-        self._metric_data.append(metric_plot_data)
-        self._metric_diagnostics.append(results.metric_diagnostics)
+        self.metric_data.append(metric_plot_data)
+        self.metric_diagnostics.append(results.metric_diagnostics)
 
         # Update pages
         for page_id in range(self._notebook.GetPageCount()):
