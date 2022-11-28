@@ -54,6 +54,7 @@ import microAO.dm_layouts
 from microAO.events import *
 from microAO.gui.main import MicroscopeAOCompositeDevicePanel
 import microAO.aoRoutines
+import microAO.aoMetrics
 
 
 class AOHandler(cockpit.handlers.deviceHandler.DeviceHandler):
@@ -448,26 +449,13 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         # Unwrap the phase
         return self.aoAlg.unwrap_interferometry(image)
 
-    def _mask_circular(self, dims, radius=None, centre=None):
-        # Init radius and centre if necessary
-        if centre is None:
-            centre = (dims / 2).astype(int)
-        if radius is None:
-            # Largest circle that could fit in the dimensions
-            radius = min(centre, dims - centre)
-        # Create a meshgrid
-        meshgrid = np.meshgrid(np.arange(dims[0]), np.arange(dims[1]))
-        # Calculate distances from the centre element
-        dist = np.sqrt(((meshgrid - centre.reshape(-1, 1, 1)) ** 2).sum(axis=0))
-        # Return a binary mask for the specified radius
-        return dist <= radius
-
     def _get_no_discontinuities(self, phase_unwrapped):
         phase_unwrapped_diff = (
             abs(np.diff(np.diff(phase_unwrapped, axis=1), axis=0))
-            * self._mask_circular(
-                np.array(phase_unwrapped.shape),
-                radius=min(phase_unwrapped.shape) / 2 - 3
+            * microAO.aoMetrics.mask_circular(
+                phase_unwrapped.shape,
+                radius_inner=0,
+                radius_outer=min(phase_unwrapped.shape) / 2 - 3
             )[:-1, :-1]
         )
         return np.shape(np.where(phase_unwrapped_diff > 2 * np.pi))[1]

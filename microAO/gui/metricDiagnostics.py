@@ -299,3 +299,33 @@ class DiagnosticsPanelSecondMoment(DiagnosticsPanelBase):
             a.axis("off")
         # Update canvas
         self._canvas.draw()
+
+
+class DiagnosticsPanelFourierSI(DiagnosticsPanelBase):
+    def _update_plot(self):
+        index_mode = self._slider_mode.GetValue() - 1
+        index_meas = self._slider_meas.GetValue() - 1
+        diagnostics = (
+            self.GetParent()
+            .GetParent()
+            .metric_diagnostics[index_mode][index_meas]
+        )
+        # Clear axes
+        self._figure.clear()
+        # Update images
+        self._axes = self._figure.subplots(1, 3, sharex=True, sharey=True)
+        self._axes[0].imshow(
+            diagnostics.fft_sq_log, cmap=self._cmap_choice.GetStringSelection()
+        )
+        self._axes[1].imshow(
+            diagnostics.SI_mask,
+            cmap=self._cmap_choice.GetStringSelection(),
+        )
+        self._axes[2].imshow(
+            diagnostics.freq_above_noise,
+            cmap=self._cmap_choice.GetStringSelection(),
+        )
+        for a in self._axes:
+            a.axis("off")
+        # Update canvas
+        self._canvas.draw()
