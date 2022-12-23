@@ -37,6 +37,7 @@ import cockpit.depot
 import cockpit.devices
 import cockpit.devices.device
 import cockpit.experiment.experiment
+import cockpit.experiment.extendedRF
 import cockpit.interfaces.imager
 import cockpit.interfaces.stageMover
 import cockpit.handlers.deviceHandler
@@ -907,10 +908,26 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                 "type is set to RISING_EDGE/HIGH or FALLING_EDGE/LOW and that "
                 "its trigger mode is set to ONCE."
             )
+        # Calculate patterns
+        if isinstance(experiment, cockpit.experiment.extendedRF.ExtendedRFExperiment):
+            patterns = self._experiment_calc_pats_zstack_ext(experiment)
+        else:
+            patterns = self._experiment_calc_pats_zstack(experiment)
+        # Repeat as necessary
+        patterns = np.tile(patterns, (experiment.numReps, 1))
+        # Apply the first pattern and omit it from the queue
+        self.proxy.send(patterns[0])
+        patterns = patterns[1:, :]
+        # Queue patterns
+        self.proxy.queue_patterns(patterns)
+
+    def _experiment_calc_pats_zstack(
+        self, experiment: cockpit.experiment.experiment.Experiment
+    ):
         # Take snapshot of current corrections
         corrections = self.get_corrections()
-        corrections_to_restore = set()
-        # Ensure that the remote focusing correction has enough datapoints
+        # Ensure that the remote focusing correction has enough datapoints if
+        # it is enabled
         if (
             corrections["remote focus"]["enabled"]
             and len(self._corrfit_dpts["remote focus"]) < 2
@@ -921,10 +938,12 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             )
         # Calculate patterns
         patterns = np.zeros((experiment.numZSlices, self.no_actuators))
+        stage_position = cockpit.interfaces.stageMover.getPosition()[2]
+        corrections_to_restore = set()
         for i in range(patterns.shape[0]):
             if corrections["remote focus"]["enabled"]:
                 z_rf = experiment.aoRFBottom + (experiment.sliceHeight * i)
-                z_abs = cockpit.interfaces.stageMover.getPosition()[2] + z_rf
+                z_abs = stage_position + z_rf
             else:
                 z_rf = None
                 z_abs = experiment.zStart + (experiment.sliceHeight * i)
@@ -938,13 +957,6 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                     if len(modes) > 0:
                         self.set_correction(cname, modes=modes)
             patterns[i] = self.proxy.calc_shape()
-        # Repeat as necessary
-        patterns = np.tile(patterns, (experiment.numReps, 1))
-        # Apply the first pattern and omit it from the queue
-        self.proxy.send(patterns[0])
-        patterns = patterns[1:, :]
-        # Queue patterns
-        self.proxy.queue_patterns(patterns)
         # Restore original corrections
         for cname in corrections_to_restore:
             self.set_correction(
@@ -952,6 +964,40 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                 modes=corrections[cname]["modes"],
                 actuator_values=corrections[cname]["actuator_values"]
             )
+        return patterns
+
+    def _experiment_calc_pats_zstack_ext(
+        self, experiment: cockpit.experiment.experiment.Experiment
+    ):
+        # Take snapshot of current corrections
+        corrections = self.get_corrections()
+        # Calculate patterns
+        num_channels = len(experiment.exposureSettings)
+        patterns = np.zeros((experiment.numZSlices * num_channels, self.no_actuators))
+        stage_position = cockpit.interfaces.stageMover.getPosition()[2]
+        corrections_to_restore = set(("remote focus",))
+        for cid in range(num_channels):
+            for zid in range(experiment.numZSlices):
+                # Remote focus
+                z = experiment.aoRFBottom + (experiment.sliceHeight * zid)
+                modes = self._corrfit_eval("remote focus", z)
+                self.set_correction("remote focus", modes=modes)
+                # Sensorless AO
+                if corrections["sensorless"]["enabled"]:
+                    z += stage_position
+                    modes = self._corrfit_eval("sensorless", z)
+                    if len(modes) > 0:
+                        self.set_correction("sensorless", modes=modes)
+                        corrections_to_restore.add("sensorless")
+                patterns[cid * experiment.numZSlices + zid] = self.proxy.calc_shape()
+        # Restore original corrections
+        for cname in corrections_to_restore:
+            self.set_correction(
+                cname,
+                modes=corrections[cname]["modes"],
+                actuator_values=corrections[cname]["actuator_values"]
+            )
+        return patterns
 
     def _experiment_cleanup(self):
         # Flush the patterns, in case the experiment ended prematurely
