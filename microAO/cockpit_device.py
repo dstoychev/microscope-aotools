@@ -146,7 +146,8 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
             "running": False,
             "iteration_index": 0,
             "image_queue": queue.Queue(),
-            "actuator_patterns": []
+            "actuator_patterns": [],
+            "camera_name": ""
         }
 
         # Handle abort events
@@ -358,11 +359,11 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         # Start a saving thread
         self._calibration_data["running"] = True
         self._calibration_data["iteration_index"] = 0
+        self._calibration_data["camera_name"] = camera_name
         self._calibrationImageSaver()
         # Subscribe to new image event
         events.subscribe(
-            events.NEW_IMAGE % camera_name,
-            lambda image, _: self._calibrationOnImage(camera_name, image)
+            events.NEW_IMAGE % camera_name, self._calibrationOnImage
         )
         # Apply the first actuator pattern and wait for it to settle
         self.send(self._calibration_data["actuator_patterns"][0])
@@ -375,8 +376,9 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         with tifffile.TiffWriter(self._calibration_data["output_filename"]) as fo:
             while self._calibration_data["running"]:
                 try:
-                    image = self._calibration_data["image_queue"].get(5)
+                    image = self._calibration_data["image_queue"].get(True, 3)
                     fo.write(image, contiguous=True)
+                    self._calibration_data["image_queue"].task_done()
                 except queue.Empty:
                     continue
         with self._calibration_data["output_filename"].with_name(
@@ -389,7 +391,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                 indent=4
             )
 
-    def _calibrationOnImage(self, camera_name, image):
+    def _calibrationOnImage(self, image, _):
         total_images = len(self._calibration_data["actuator_patterns"])
         # Put image on the queue and update the statue bar if there is no abort
         # request
@@ -415,11 +417,9 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                     self._calibration_data["iteration_index"]
                 ]
             )
-            time.sleep(0.1)
-            wx.CallAfter(wx.GetApp().Imager.takeImage)
         else:
             events.unsubscribe(
-                events.NEW_IMAGE % camera_name,
+                events.NEW_IMAGE % self._calibration_data["camera_name"],
                 self._calibrationOnImage,
             )
             events.publish(events.UPDATE_STATUS_LIGHT, "image count", "")
@@ -431,6 +431,8 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                     self._calibration_data["actuator_patterns"][0]
                 ) + 0.5
             )
+        time.sleep(0.1)
+        wx.CallAfter(wx.GetApp().Imager.takeImage)
 
     def unwrap_phase(self, image):
         # Crop the image if necessary
