@@ -488,7 +488,6 @@ class _DMFlatLoaderSaver(wx.Dialog):
 
     def GetPath(self):
         fpath = self._filepath.GetValue()
-        print('fpath', fpath)
         return fpath
 
     def GetType(self):
