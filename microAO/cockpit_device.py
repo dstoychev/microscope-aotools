@@ -1049,6 +1049,8 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
     def corrfit_dp_add(self, cname, z, modes):
         self._corrfit_dpts[cname][z] = modes
         self._corrfit_update(cname)
+        # Signal the change in data points
+        events.publish(PUBSUB_CORRFIT_DPS_CHANGE)
         # Update corrections if necessary
         z_current = self._rf_pos
         if cname == "sensorless":
@@ -1062,6 +1064,8 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
         # Delete the data point and update the regression model
         del self._corrfit_dpts[cname][z]
         self._corrfit_update(cname)
+        # Signal the change in data points
+        events.publish(PUBSUB_CORRFIT_DPS_CHANGE)
         # Get the current Z position
         z_current = self._rf_pos
         if cname == "sensorless":

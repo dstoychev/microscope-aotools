@@ -6,3 +6,4 @@ PUBSUB_SENSORLESS_RESULTS = 'sensorless results'
 PUBSUB_RF_CALIB_CACT_DATA = "rf calib cact data"
 PUBSUB_RF_CALIB_CACT_PROJ = "rf calib cact proj"
 PUBUSB_CHANGED_CORRECTION = "changed correction"
+PUBSUB_CORRFIT_DPS_CHANGE = "change in correction fitting data points"

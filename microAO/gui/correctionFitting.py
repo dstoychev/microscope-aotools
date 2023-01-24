@@ -180,6 +180,14 @@ class CorrectionFittingFrame(wx.Frame):
             cockpit.events.STAGE_STOPPED, self._on_stage_stopped
         )
 
+        # Subscribe to datapoint events
+        cockpit.events.subscribe(
+            PUBSUB_CORRFIT_DPS_CHANGE, self._update_data_list
+        )
+        cockpit.events.subscribe(
+            PUBSUB_CORRFIT_DPS_CHANGE, self._update_fitting_plot
+        )
+
         # Handle close events
         self.Bind(wx.EVT_CLOSE, self._on_close)
 
@@ -191,6 +199,12 @@ class CorrectionFittingFrame(wx.Frame):
         # Unsubscribe from stage events
         cockpit.events.unsubscribe(
             cockpit.events.STAGE_STOPPED, self._on_stage_stopped
+        )
+        cockpit.events.unsubscribe(
+            PUBSUB_CORRFIT_DPS_CHANGE, self._update_data_list
+        )
+        cockpit.events.unsubscribe(
+            PUBSUB_CORRFIT_DPS_CHANGE, self._update_fitting_plot
         )
         # Let the default event handler destroy the frame
         event.Skip()
@@ -235,10 +249,8 @@ class CorrectionFittingFrame(wx.Frame):
             ["Datapoint's Z position [um]:"],
             (0.0,),
         )
-        # Add the datapoint and update the list
+        # Add the datapoint
         self._device.corrfit_dp_add(correction_name, float(inputs[0]), modes)
-        self._update_data_list()
-        self._update_fitting_plot()
 
     def _on_remove_datapoint(self, _: wx.CommandEvent) -> None:
         # Parse the focused item
@@ -255,13 +267,11 @@ class CorrectionFittingFrame(wx.Frame):
             ) as dlg:
                 dlg.ShowModal()
             return
-        # Remove the datapoint and update
+        # Remove the datapoint
         self._device.corrfit_dp_rem(
             self._data_tree.GetItemText(focused_item_parent),
             self._data_tree.GetItemData(focused_item),
         )
-        self._update_data_list()
-        self._update_fitting_plot()
 
     def _dp_ndarray_to_list(self) -> dict[str, dict[float, list[float]]]:
         datapoints_ndarrays = self._device.corrfit_dp_get()
@@ -348,9 +358,6 @@ class CorrectionFittingFrame(wx.Frame):
                     self._device.corrfit_dp_add(
                         cname, float(z), np.array(datapoints_loaded[cname][z])
                     )
-        # Update list and plot
-        self._update_data_list()
-        self._update_fitting_plot()
 
     def _update_data_list(self) -> None:
         datapoints = self._device.corrfit_dp_get()
