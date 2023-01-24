@@ -420,6 +420,9 @@ class CorrectionFittingFrame(wx.Frame):
             for mode in self._fit_filter.GetValue()
             if (mode - 1) < modes_all.shape[1]
         ]
+        if len(filter_modes) == 0:
+            # Do not draw if the filter is invalid
+            return
 
         # Determine the current Z position
         current_z = self._device.rf_get_position()
