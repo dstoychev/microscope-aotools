@@ -420,18 +420,13 @@ class CorrectionFittingFrame(wx.Frame):
             current_z = cockpit.interfaces.stageMover.getPosition()[2]
 
         # Determine the x-axis endpoints
-        zs_middle = np.max(zs) - (np.max(zs) - np.min(zs)) / 2
-        zs_max_span = max([abs(z - zs_middle) for z in zs])
+        zs_with_current = np.append(zs, current_z)
+        zs_middle = zs_with_current.max() - zs_with_current.ptp() / 2
+        zs_max_span = max([abs(z - zs_middle) for z in zs_with_current])
         endpoints_z = np.array(
             (
-                min(
-                    round(current_z),
-                    round(zs_middle - zs_max_span * self._RANGE_MULTIPLIER_Z),
-                ),
-                max(
-                    round(current_z),
-                    round(zs_middle + zs_max_span * self._RANGE_MULTIPLIER_Z),
-                ),
+                zs_middle - zs_max_span * self._RANGE_MULTIPLIER_Z,
+                zs_middle + zs_max_span * self._RANGE_MULTIPLIER_Z,
             )
         )
 
