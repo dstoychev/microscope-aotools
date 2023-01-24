@@ -258,7 +258,7 @@ class CorrectionFittingFrame(wx.Frame):
         # Remove the datapoint and update
         self._device.corrfit_dp_rem(
             self._data_tree.GetItemText(focused_item_parent),
-            float(self._data_tree.GetItemText(focused_item)[4:-3]),
+            self._data_tree.GetItemData(focused_item),
         )
         self._update_data_list()
         self._update_fitting_plot()
@@ -363,13 +363,14 @@ class CorrectionFittingFrame(wx.Frame):
                 modes = datapoints[correction_name][z]
                 # Add a datapoint node
                 datapoint_node = self._data_tree.AppendItem(
-                    correction_node, f"Z = {z:+.03f} um"
+                    correction_node, f"Z = {z:+.03f} um", data=z
                 )
                 # Add mode nodes
                 for mode_index, mode_value in enumerate(modes):
                     self._data_tree.AppendItem(
                         datapoint_node,
                         f"{mode_index + 1:02d}: {mode_value:+.05f}",
+                        data=mode_value,
                     )
             # Show datapoints
             self._data_tree.Expand(correction_node)
@@ -392,7 +393,18 @@ class CorrectionFittingFrame(wx.Frame):
         modes_all = np.array([datapoints[correction_name][z] for z in zs])
 
         # Exit early in the absence of datapoints
-        if zs.size == 0:
+        if zs.size < 2:
+            self._fit_axes.text(
+                0.5,
+                0.5,
+                "Not enough datapoints",
+                horizontalalignment="center",
+                verticalalignment="center",
+                transform=self._fit_axes.transAxes,
+                color="red",
+                fontsize="x-large",
+            )
+            self._fit_canvas.draw()
             return
 
         # Filter modes
