@@ -955,7 +955,7 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
                     "Warning",
                     wx.YES_NO | wx.ICON_WARNING
                 ) as dlg:
-                    if dlg.ShowModal() != wx.OK:
+                    if dlg.ShowModal() != wx.ID_YES:
                         if window:
                             window.Show(False)
                         raise Exception(
