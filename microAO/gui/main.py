@@ -722,7 +722,7 @@ class MicroscopeAOCompositeDevicePanel(wx.Panel):
             self.OnCorrectionState
         )
         cockpit.events.subscribe(
-            microAO.events.PUBUSB_CHANGED_CORRECTION,
+            microAO.events.PUBSUB_CHANGED_CORRECTION,
             self.OnCorrectionChange
         )
         checklist_sizer = wx.BoxSizer(wx.VERTICAL)

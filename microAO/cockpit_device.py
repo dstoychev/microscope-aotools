@@ -796,7 +796,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
 
         # Publish event
         events.publish(
-            PUBUSB_CHANGED_CORRECTION,
+            PUBSUB_CHANGED_CORRECTION,
             name,
             self.get_corrections()[name]["enabled"]
         )
@@ -806,7 +806,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
 
         # Publish event
         events.publish(
-            PUBUSB_CHANGED_CORRECTION,
+            PUBSUB_CHANGED_CORRECTION,
             name,
             self.get_corrections()[name]["enabled"]
         )

@@ -144,7 +144,7 @@ class _ModesPanel(wx.lib.scrolledpanel.ScrolledPanel):
             microAO.events.PUBSUB_SET_PHASE, self._on_new_modes
         )
         cockpit.events.subscribe(
-            microAO.events.PUBUSB_CHANGED_CORRECTION, self._on_new_modes
+            microAO.events.PUBSUB_CHANGED_CORRECTION, self._on_new_modes
         )
 
         # Bind close event
@@ -397,7 +397,7 @@ class _ModesPanel(wx.lib.scrolledpanel.ScrolledPanel):
             microAO.events.PUBSUB_SET_PHASE, self._on_new_modes
         )
         cockpit.events.unsubscribe(
-            microAO.events.PUBUSB_CHANGED_CORRECTION, self._on_new_modes
+            microAO.events.PUBSUB_CHANGED_CORRECTION, self._on_new_modes
         )
         # Continue + destroy frame
         event.Skip()
