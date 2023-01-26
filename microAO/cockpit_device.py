@@ -948,7 +948,7 @@ class MicroscopeAOCompositeDevice(cockpit.devices.device.Device):
                 z_abs = stage_position + z_rf
             else:
                 z_rf = None
-                z_abs = experiment.zStart + (experiment.sliceHeight * i)
+                z_abs = stage_position + (experiment.sliceHeight * i)
             for cname, z in (
                 ("remote focus", z_rf),
                 ("sensorless", z_abs),

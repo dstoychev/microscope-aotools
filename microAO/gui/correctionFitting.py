@@ -223,8 +223,8 @@ class CorrectionFittingFrame(wx.Frame):
                 "datapoint should be added.",
                 "Warning",
                 wx.OK | wx.ICON_WARNING,
-            ) as dlg:
-                dlg.ShowModal()
+            ) as mDialog:
+                mDialog.ShowModal()
             return
         correction_name = self._data_tree.GetItemText(focused_item)
         # Get the modes
@@ -243,14 +243,19 @@ class CorrectionFittingFrame(wx.Frame):
         else:
             modes = self._device.sum_corrections()[0]
         # Ask for Z position
-        inputs = cockpit.gui.dialogs.getNumberDialog.getManyNumbersFromUser(
+        current_z = cockpit.interfaces.stageMover.getPosition()[2]
+        with wx.TextEntryDialog(
             self,
-            "Datapoint's Z position",
-            ["Datapoint's Z position [um]:"],
-            (0.0,),
-        )
-        # Add the datapoint
-        self._device.corrfit_dp_add(correction_name, float(inputs[0]), modes)
+            "Enter datapoint's Z position:"
+            f"\n(Current absolute Z position is {current_z} um",
+            value=str(current_z),
+        ) as teDialog:
+            if teDialog.ShowModal() != wx.ID_OK:
+                return
+            # Add the datapoint
+            self._device.corrfit_dp_add(
+                correction_name, float(teDialog.GetValue()), modes
+            )
 
     def _on_remove_datapoint(self, _: wx.CommandEvent) -> None:
         # Parse the focused item
