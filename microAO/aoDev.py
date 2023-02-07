@@ -419,6 +419,26 @@ class AdaptiveOpticsDevice(Device):
     def queue_patterns(self, patterns):
         _logger.info("Queuing patterns on DM")
 
+        # Saturate values
+        for i in range(patterns.shape[0]):
+            for limit, candidates in (
+                (
+                    self._saturation_limits[0],
+                    patterns[i] < self._saturation_limits[0]
+                ),
+                (
+                    self._saturation_limits[1],
+                    patterns[i] > self._saturation_limits[1]
+                )
+            ):
+                if candidates.any():
+                    indices = candidates.nonzero()[0]
+                    _logger.info(
+                        f"Saturating the voltages of actuators {list(indices)}"
+                        f" to {limit}."
+                    )
+                    patterns[i,indices] = limit
+
         ttype, tmode = self.get_trigger()
         if ttype != "RISING_EDGE":
             self.set_trigger(TriggerType.RISING_EDGE, TriggerMode.ONCE)
