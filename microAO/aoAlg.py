@@ -378,16 +378,17 @@ class AdaptiveOpticsFunctions():
         offsets = np.zeros((noZernikeModes, numActuators))
         P_tests = np.zeros((noZernikeModes, numActuators))
 
+        numPokes = pokeSteps.shape[0] // numActuators
+
         for ii in range(numActuators):
             if pupil_ac[ii] == 1:
-                pokeSteps_trimmed = pokeSteps[np.where(pokeSteps[:, ii] != 0)[0], ii]
-                zernikeModeAmp = zernikeAmps[np.where(pokeSteps[:, ii] != 0)[0], :]
+                pokeSteps_trimmed = pokeSteps[ii * numPokes : (ii + 1) * numPokes, ii]
+                zernikeModeAmp = zernikeAmps[ii * numPokes : (ii + 1) * numPokes, :]
 
                 # Check that the influence slope for each actuator can actually be calculated
                 if len(pokeSteps_trimmed) < 2:
                     raise Exception("Not enough Zernike mode values to calculate slope for actuator %i. "
                                     "Control matrix calculation will fail" % (ii + 1))
-                    break
 
                 # Fit a linear regression to get the relationship between actuator position and Zernike mode amplitude
                 for kk in range(noZernikeModes):
